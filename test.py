@@ -14,6 +14,36 @@ given_machine_details= [
         'tcp_server_ip' : '127.0.0.1',
         'tcp_server_port' : '3002',
         'dm' : 'DM02'
+        },
+    'machine_03':{
+        'machine_key' : 'IBS101',
+        'tcp_server_ip' : '127.0.0.1',
+        'tcp_server_port' : '3003',
+        'dm' : 'DM03'
+        },
+    'machine_04':{
+        'machine_key' : 'IBS102',
+        'tcp_server_ip' : '127.0.0.1',
+        'tcp_server_port' : '3004',
+        'dm' : 'DM04'
+        },
+    'machine_05':{
+        'machine_key' : 'IBS201',
+        'tcp_server_ip' : '127.0.0.1',
+        'tcp_server_port' : '3005',
+        'dm' : 'DM05'
+        },
+    'machine_06':{
+        'machine_key' : 'IBS301',
+        'tcp_server_ip' : '127.0.0.1',
+        'tcp_server_port' : '3006',
+        'dm' : 'DM06'
+        },
+    'machine_07':{
+        'machine_key' : 'IBS401',
+        'tcp_server_ip' : '127.0.0.1',
+        'tcp_server_port' : '3007',
+        'dm' : 'DM07'
         }
     }
 ]
