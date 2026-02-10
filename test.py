@@ -1,6 +1,11 @@
-# given data
+# =========================
+# GIVEN DATA
+# =========================
+
 given_regex = r"^[A-Z0-9]{6,20}$"
+
 given_scenarios = [{"DBAR": 0.1, "IBAR": 0.1, "DNFR": 0.1, "CFGR": 0.1, "SUCC": 0.6}]
+
 given_machine_details = [
     {
         "machine_01": {
@@ -48,100 +53,126 @@ given_machine_details = [
     }
 ]
 
-# imports
+# =========================
+# IMPORTS
+# =========================
+
 import random
 import string
 import re
 import time
+import socket
+import threading
 from colorama import Fore, Style, init
 
+init(autoreset=True)
 
-# logger
+# =========================
+# LOGGER (ONLY TAG COLORED)
+# =========================
+
+import threading
+from datetime import datetime
+from colorama import Fore, Style
+
+
 class logger:
-    init()
+    _lock = threading.Lock()
 
     @staticmethod
-    def info(message: str):
-        print(Fore.GREEN + Style.BRIGHT + " [INFO] " + Style.RESET_ALL + message)
+    def _print(tag_color, tag, msg):
+        now = datetime.now().strftime("%H:%M:%S")
+        with logger._lock:
+            print(
+                f"{Fore.CYAN}{now}{Style.RESET_ALL} "
+                f"{tag_color}{Style.BRIGHT}[{tag:<5}]{Style.RESET_ALL} {msg}",
+                flush=True,
+            )
 
     @staticmethod
-    def error(message: str):
-        print(Fore.RED + Style.BRIGHT + " [ERROR] " + Style.RESET_ALL + message)
+    def info(msg):
+        logger._print(Fore.GREEN, "INFO", msg)
 
     @staticmethod
-    def warn(message: str):
-        print(Fore.YELLOW + Style.BRIGHT + " [WARN] " + Style.RESET_ALL + message)
+    def warn(msg):
+        logger._print(Fore.YELLOW, "WARN", msg)
+
+    @staticmethod
+    def error(msg):
+        logger._print(Fore.RED, "ERROR", msg)
 
 
-# choose one scenario
-def getOneScenario(scenarios: list):
-    logger.info("Choosing one of the given scenarios...")
+# =========================
+# SCENARIO PICKER
+# =========================
+
+
+def getOneScenario(scenarios):
     scenario_dict = scenarios[0]
-    scenarios_name_list = list(scenario_dict.keys())
-    scenarios_prob_list = list(scenario_dict.values())
-    chosen_scenario = random.choices(
-        population=scenarios_name_list, weights=scenarios_prob_list, k=1
-    )[0]
-    logger.info(f"Scenario picked: {chosen_scenario}")
-    return chosen_scenario
+    names = list(scenario_dict.keys())
+    probs = list(scenario_dict.values())
+    return random.choices(names, probs, k=1)[0]
 
 
-# getOneScenario(given_scenarios)
+# =========================
+# BARCODE GENERATOR
+# =========================
 
 
-# barcode generator
 class barcode:
     PATTERN = re.compile(given_regex)
-
     CHARS = string.ascii_uppercase + string.digits
     INVALID_CHARS = string.ascii_lowercase + "!@#$%^&*"
 
     @staticmethod
-    def noread(counter: int):
+    def noread(counter):
         return f"NoRead{counter}"
 
     @classmethod
-    def valid(cls, min_len=6, max_len=20):
-        length = random.randint(min_len, max_len)
-        code = "".join(random.choice(cls.CHARS) for _ in range(length))
-        return code
+    def valid(cls):
+        length = random.randint(6, 20)
+        return "".join(random.choice(cls.CHARS) for _ in range(length))
 
     @classmethod
     def invalid(cls):
         mode = random.choice(["short", "long", "badchar"])
 
         if mode == "short":
-            length = random.randint(1, 5)  # less than 6
-            return "".join(random.choice(cls.CHARS) for _ in range(length))
+            return "".join(
+                random.choice(cls.CHARS) for _ in range(random.randint(1, 5))
+            )
 
         elif mode == "long":
-            length = random.randint(21, 30)  # more than 20
-            return "".join(random.choice(cls.CHARS) for _ in range(length))
+            return "".join(
+                random.choice(cls.CHARS) for _ in range(random.randint(21, 30))
+            )
 
-        else:  # badchar
+        else:
             length = random.randint(6, 20)
-            chars = cls.CHARS + cls.INVALID_CHARS
-            code = "".join(random.choice(chars) for _ in range(length))
-
-            # ensure it really breaks regex
+            code = "".join(
+                random.choice(cls.CHARS + cls.INVALID_CHARS) for _ in range(length)
+            )
             if cls.PATTERN.match(code):
-                return code.lower()  # force invalid
+                return code.lower()
             return code
 
 
-# pb formatter -> <machine_key>,<TID>,PB,<dm>,<mode>,<SID>,<barcode>
-def pbFormatter(machine_key: str, tid: int, dm: str, sid: int, code: str):
-    pb_string = f"{machine_key},{tid},PB,{dm},{sid},{code}"
-    return pb_string
+# =========================
+# PB FORMATTER
+# =========================
 
 
-# tcp client
-import socket
-import threading
+def pbFormatter(machine_key, tid, dm, mode, sid, code):
+    return f"{machine_key},{tid},PB,{dm},{mode},{sid},{code}\n"
+
+
+# =========================
+# TCP CLIENT
+# =========================
 
 
 class TCPClient:
-    def __init__(self, host: str, port: int, timeout: int = 5):
+    def __init__(self, host, port, timeout=5):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -154,24 +185,43 @@ class TCPClient:
             self.sock.settimeout(self.timeout)
             self.sock.connect((self.host, self.port))
             self.running = True
-            print(f"[CONNECTED] {self.host}:{self.port}")
-
-            # Start receiver thread
+            logger.info(f"Connected → {self.host}:{self.port}")
             threading.Thread(target=self._receive_loop, daemon=True).start()
-
         except Exception as e:
-            print(f"[ERROR] Connect failed: {e}")
+            logger.error(f"Connect failed {self.host}:{self.port} → {e}")
 
-    def send(self, data: str):
+
+    def _receive_loop(self):
+        buffer = ""
+
+        while self.running:
+            try:
+                data = self.sock.recv(1024)
+                if not data:
+                    break
+
+                buffer += data.decode()
+
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if line:
+                        logger.warn(f"{self.host}:{self.port} ← {line}")
+
+            except:
+                break
+
+        self.close()
+
+    def send(self, data):
         try:
             if self.sock:
                 self.sock.sendall(data.encode())
-                print(f"[SENT] {data}")
+                logger.info(f"{self.host}:{self.port} → {data.strip()}")
         except Exception as e:
-            print(f"[ERROR] Send failed: {e}")
+            logger.error(f"Send failed → {e}")
             self.close()
 
-    # Close connection
     def close(self):
         self.running = False
         if self.sock:
@@ -179,45 +229,59 @@ class TCPClient:
                 self.sock.close()
             except:
                 pass
-        print("[CLOSED]")
+        logger.warn(f"Closed → {self.host}:{self.port}")
 
 
-# main simulation
-noread_counter = 0
-tid_counter = 0
-sid_counter = 0
+# =========================
+# MAIN
+# =========================
 
 machines = given_machine_details[0]
 
-try:
-    client = TCPClient("127.0.0.1", 3001)
-    client.connect()
+clients = {}
+for m in machines.values():
+    c = TCPClient(m["tcp_server_ip"], int(m["tcp_server_port"]))
+    c.connect()
+    clients[m["machine_key"]] = c
 
+noread_counter = 0
+tid_counter = 0
+sid_counter = {m["machine_key"]: 0 for m in machines.values()}
+
+try:
     while True:
         scenario = getOneScenario(given_scenarios)
-
+        logger.info(f"Scenario picked: {scenario}")
         tid_counter += 1
-        sid_counter += 1
 
-        if scenario == "DBAR":
-            noread_counter += 1
-            code = barcode.noread(noread_counter)
-        elif scenario == "IBAR":
-            code = barcode.invalid()
-        else:
-            code = barcode.valid()
+        for machine in machines.values():
 
-        for machine_id, machine in machines.items():
+            sid_counter[machine["machine_key"]] += 1
+
+            if scenario == "DBAR":
+                noread_counter += 1
+                code = barcode.noread(noread_counter)
+            elif scenario == "IBAR":
+                code = barcode.invalid()
+            else:
+                code = barcode.valid()
+
             pb_string = pbFormatter(
-                machine["machine_key"],
-                tid_counter,
-                machine["dm"],
-                sid_counter,
+                machine_key=machine["machine_key"],
+                tid=tid_counter,
+                dm=machine["dm"],
+                mode="A",
+                sid=sid_counter[machine["machine_key"]],
                 code=code,
             )
-            logger.info(f"[{machine_id}] PB string generated: {pb_string}")
+
+            clients[machine["machine_key"]].send(pb_string)
 
         time.sleep(1)
 
 except KeyboardInterrupt:
-    logger.info("Simulation stopped by user")
+    logger.warn("Simulation stopped")
+
+finally:
+    for c in clients.values():
+        c.close()
