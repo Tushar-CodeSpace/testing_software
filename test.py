@@ -190,25 +190,33 @@ class TCPClient:
         except Exception as e:
             logger.error(f"Connect failed {self.host}:{self.port} → {e}")
 
-
     def _receive_loop(self):
         buffer = ""
 
         while self.running:
             try:
-                data = self.sock.recv(1024)
+                data = self.sock.recv(1024)  # type: ignore
                 if not data:
                     break
 
-                buffer += data.decode()
+                chunk = data.decode(errors="ignore")
+                buffer += chunk
 
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if line:
-                        logger.warn(f"{self.host}:{self.port} ← {line}")
+                # Case 1: newline framed messages
+                if "\n" in buffer:
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+                        if line:
+                            logger.warn(f"{self.host}:{self.port} ← {line}")
 
-            except:
+                # Case 2: no newline (raw PLC packet)
+                elif buffer:
+                    logger.warn(f"{self.host}:{self.port} ← {buffer.strip()}")
+                    buffer = ""
+
+            except Exception as e:
+                logger.error(f"RX error {self.host}:{self.port} → {e}")
                 break
 
         self.close()
