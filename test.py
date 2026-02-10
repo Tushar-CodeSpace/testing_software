@@ -1,50 +1,50 @@
 # given data
 given_regex = r"^[A-Z0-9]{6,20}$"
 given_scenarios = [{"DBAR": 0.1, "IBAR": 0.1, "DNFR": 0.1, "CFGR": 0.1, "SUCC": 0.6}]
-given_machine_details= [
+given_machine_details = [
     {
-    'machine_01':{
-        'machine_key' : 'IBS001',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3001',
-        'dm' : 'DM01'
+        "machine_01": {
+            "machine_key": "IBS001",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3001",
+            "dm": "DM01",
         },
-    'machine_02':{
-        'machine_key' : 'IBS002',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3002',
-        'dm' : 'DM02'
+        "machine_02": {
+            "machine_key": "IBS002",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3002",
+            "dm": "DM02",
         },
-    'machine_03':{
-        'machine_key' : 'IBS101',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3003',
-        'dm' : 'DM03'
+        "machine_03": {
+            "machine_key": "IBS101",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3003",
+            "dm": "DM03",
         },
-    'machine_04':{
-        'machine_key' : 'IBS102',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3004',
-        'dm' : 'DM04'
+        "machine_04": {
+            "machine_key": "IBS102",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3004",
+            "dm": "DM04",
         },
-    'machine_05':{
-        'machine_key' : 'IBS201',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3005',
-        'dm' : 'DM05'
+        "machine_05": {
+            "machine_key": "IBS201",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3005",
+            "dm": "DM05",
         },
-    'machine_06':{
-        'machine_key' : 'IBS301',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3006',
-        'dm' : 'DM06'
+        "machine_06": {
+            "machine_key": "IBS301",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3006",
+            "dm": "DM06",
         },
-    'machine_07':{
-        'machine_key' : 'IBS401',
-        'tcp_server_ip' : '127.0.0.1',
-        'tcp_server_port' : '3007',
-        'dm' : 'DM07'
-        }
+        "machine_07": {
+            "machine_key": "IBS401",
+            "tcp_server_ip": "127.0.0.1",
+            "tcp_server_port": "3007",
+            "dm": "DM07",
+        },
     }
 ]
 
@@ -97,8 +97,8 @@ class barcode:
     INVALID_CHARS = string.ascii_lowercase + "!@#$%^&*"
 
     @staticmethod
-    def noread(counter:int):
-        return f'NoRead{counter}'
+    def noread(counter: int):
+        return f"NoRead{counter}"
 
     @classmethod
     def valid(cls, min_len=6, max_len=20):
@@ -135,6 +135,52 @@ def pbFormatter(machine_key: str, tid: int, dm: str, sid: int, code: str):
     return pb_string
 
 
+# tcp client
+import socket
+import threading
+
+
+class TCPClient:
+    def __init__(self, host: str, port: int, timeout: int = 5):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self.sock = None
+        self.running = False
+
+    def connect(self):
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.settimeout(self.timeout)
+            self.sock.connect((self.host, self.port))
+            self.running = True
+            print(f"[CONNECTED] {self.host}:{self.port}")
+
+            # Start receiver thread
+            threading.Thread(target=self._receive_loop, daemon=True).start()
+
+        except Exception as e:
+            print(f"[ERROR] Connect failed: {e}")
+
+    def send(self, data: str):
+        try:
+            if self.sock:
+                self.sock.sendall(data.encode())
+                print(f"[SENT] {data}")
+        except Exception as e:
+            print(f"[ERROR] Send failed: {e}")
+            self.close()
+
+    # Close connection
+    def close(self):
+        self.running = False
+        if self.sock:
+            try:
+                self.sock.close()
+            except:
+                pass
+        print("[CLOSED]")
+
 
 # main simulation
 noread_counter = 0
@@ -144,27 +190,30 @@ sid_counter = 0
 machines = given_machine_details[0]
 
 try:
+    client = TCPClient("127.0.0.1", 3001)
+    client.connect()
+
     while True:
         scenario = getOneScenario(given_scenarios)
 
         tid_counter += 1
         sid_counter += 1
 
-        if scenario == 'DBAR':
+        if scenario == "DBAR":
             noread_counter += 1
             code = barcode.noread(noread_counter)
-        elif scenario == 'IBAR':
+        elif scenario == "IBAR":
             code = barcode.invalid()
         else:
             code = barcode.valid()
 
         for machine_id, machine in machines.items():
             pb_string = pbFormatter(
-                machine['machine_key'],
+                machine["machine_key"],
                 tid_counter,
-                machine['dm'],
+                machine["dm"],
                 sid_counter,
-                code=code
+                code=code,
             )
             logger.info(f"[{machine_id}] PB string generated: {pb_string}")
 
